@@ -7,41 +7,74 @@ import (
 	"github.com/qmuntal/stateless"
 )
 
+type PhotoBoothTrigger string
+
+const (
+	SessionStart  PhotoBoothTrigger = "SessionStart"
+	CountDown     PhotoBoothTrigger = "CountDown"
+	SharingScreen PhotoBoothTrigger = "SharingScreen"
+	Printing      PhotoBoothTrigger = "Printing"
+	SessionEnd    PhotoBoothTrigger = "SessionEnd"
+)
+
 type PhotoBoothState string
 
 const (
-	SessionStart  PhotoBoothState = "SessionStart"
-	CountDown     PhotoBoothState = "CountDown"
-	SharingScreen PhotoBoothState = "SharingScreen"
-	Printing      PhotoBoothState = "Printing"
-	SessionEnd    PhotoBoothState = "SessionEnd"
+	OffHook      PhotoBoothState = "OffHook"
+	TakePicture  PhotoBoothState = "TakePicture"
+	ChromeWindow PhotoBoothState = "ChromeWindow"
 )
 
 func main() {
 
-	photoBoothState := stateless.NewStateMachine(SessionStart)
+	photoBoothState := stateless.NewStateMachine(OffHook)
 
-	photoBoothState.Configure(SessionStart).Permit(CountDown, SharingScreen)
 	photoBoothState.
-		Configure(SharingScreen).
-		OnEntryFrom(CountDown, func(ctx context.Context, args ...interface{}) error {
-			fmt.Println("OnEntryFrom SharingScreen", args)
+		Configure(OffHook).
+		Permit(SessionStart, TakePicture)
+
+	photoBoothState.
+		Configure(TakePicture).
+		OnEntryFrom(SessionStart, func(ctx context.Context, args ...interface{}) error {
+			fmt.Println("SessionStart")
 			return nil
 		}).
-		Permit(Printing, SessionEnd)
-
-	photoBoothState.
-		Configure(SessionEnd).
 		OnEntry(func(ctx context.Context, args ...interface{}) error {
-			fmt.Println("SessionEnd on entry", args)
+			fmt.Println("OnEntry, TakePicture")
 			return nil
 		}).
-		OnExit(func(ctx context.Context, args ...interface{}) error {
-			fmt.Println("SessionEnd on exit", args)
+		InternalTransition(SharingScreen, func(ctx context.Context, args ...interface{}) error {
+			fmt.Println("InternalTransition, SharingScreen")
 			return nil
-		}).Permit(SessionStart, CountDown)
+		}).
+		InternalTransition(Printing, func(ctx context.Context, args ...interface{}) error {
+			fmt.Println("InternalTransition, Printing")
+			return nil
+		}).
+		PermitReentry(CountDown).
+		Permit(SessionEnd, ChromeWindow)
 
-	photoBoothState.Fire(CountDown, "test")
-	photoBoothState.Fire(Printing, "test")
+	photoBoothState.
+		Configure(ChromeWindow).
+		OnEntry(func(ctx context.Context, args ...interface{}) error {
+			fmt.Println("OnEntry, ChromeWindow")
+			return nil
+		}).
+		Permit(SessionEnd, OffHook)
+
+	fmt.Println(photoBoothState.ToGraph())
+
+	ctx := context.Background()
+
+	photoBoothState.FireCtx(ctx, SessionStart)
+	photoBoothState.FireCtx(ctx, CountDown)
+	photoBoothState.FireCtx(ctx, SharingScreen)
+	photoBoothState.FireCtx(ctx, Printing)
+	photoBoothState.FireCtx(ctx, SessionEnd)
+
+	fmt.Println()
+
+	lastState, _ := photoBoothState.State(ctx)
+	fmt.Println("lastState:", lastState)
 
 }
